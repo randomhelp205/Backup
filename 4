@@ -1,0 +1,27 @@
+#!/bin/bash
+set -eux
+
+echo "pwd=${PWD}"
+echo "SpaceName=${SAGEMAKER_SPACE_NAME}"
+printenv > env.log
+
+# Use /opt/ml/code/backup (always exists, writable in SageMaker)
+BACKUP_ROOT="/opt/ml/code/backup"
+echo "Using backup root: ${BACKUP_ROOT}"
+
+# If SAGEMAKER_SPACE_NAME is empty, use 'default' to avoid errors
+TARGET_DIR="${BACKUP_ROOT}/space_ebs_backup/${SAGEMAKER_SPACE_NAME:-default}"
+echo "Target backup dir: ${TARGET_DIR}"
+
+# Make the target directory
+mkdir -p "${TARGET_DIR}"
+
+# Print timestamp
+time_now=$(date +%s)
+echo "Backup timestamp: ${time_now}"
+
+# rsync all files (except env.log and any custom excluded dirs)
+rsync -a --ignore-existing --exclude=env.log --exclude=.ipynb_checkpoints ./ "${TARGET_DIR}/"
+
+echo "Backup completed successfully at: $(date)"
+echo "Backup location: ${TARGET_DIR}"
