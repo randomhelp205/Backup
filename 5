@@ -1,0 +1,23 @@
+#!/bin/bash
+set -eux
+
+# Print environment and working directory for debugging
+echo "PATH=${PATH}"
+echo "pwd=${PWD}"
+
+# Use a default if SAGEMAKER_SPACE_NAME is not set
+SPACE_NAME="${SAGEMAKER_SPACE_NAME:-default}"
+
+# Use /opt/ml/code/backup (always exists and writable in SageMaker)
+BACKUP_ROOT="/opt/ml/code/backup"
+BACKUP_DIR="${BACKUP_ROOT}/space_ebs_backup/${SPACE_NAME}"
+mkdir -p "${BACKUP_DIR}"
+
+# Print timestamp
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+echo "Starting backup at ${TIMESTAMP}"
+
+# Recursively copy /home/sagemaker-user to the backup dir using cp (always available)
+cp -r /home/sagemaker-user/ "${BACKUP_DIR}/"
+
+echo "Backup completed successfully to: ${BACKUP_DIR}"
