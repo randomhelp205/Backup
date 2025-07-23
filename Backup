@@ -1,1 +1,111 @@
 
+# Troubleshooting SageMaker Lifecycle Configuration Script Errors
+
+You have correctly implemented and tested a SageMaker Studio Lifecycle Configuration (LCC) using a “Hello World” script. However, when replacing it with the AWS-provided backup script to replicate EBS user data to EFS, your JupyterLab environment terminates with a SIGTERM and the server is stopped unexpectedly.
+
+## Common Causes for LCC Script Failures
+
+### 1. Script Exceeds Allowed Runtime
+
+- **Five-Minute Timeout:** LCC scripts in SageMaker must complete within 5 minutes. If the script runs longer, SageMaker forcibly sends a SIGTERM to terminate the server, as observed in your logs[1][2][3].
+- **Symptoms:** Abrupt session termination, CloudWatch logs referencing script timeouts or SIGTERM signals.
+
+### 2. Command Errors or Mount Failures
+
+- If any command in the script fails (e.g., EFS not mounted, permission issues, rsync failures), the script may exit with a non-zero code, prompting termination.
+- **Suggestion:** Ensure EFS is properly mounted and accessible before running any backup commands.
+
+### 3. Script Permissions and Compatibility
+
+- **Incorrect shebang or permissions:** Ensure the script starts with `#!/bin/bash` and is executable.
+- **Not targeting the correct directory:** Double-check any assumptions made by the script about the existence or location of directories.
+
+## Diagnostic Steps
+
+### Check CloudWatch Log Details
+
+- Review `/aws/sagemaker/Studio` logs for your user profile’s app session to see where the script fails—look for the last output before SIGTERM.
+
+### Test Script Interactively
+
+- Manually run the backup commands inside a launched JupyterLab terminal with the same user to confirm the script completes quickly and without error.
+
+### Validate EFS Mount
+
+- Confirm that the EFS directory is mounted and writable by SageMaker before triggering the backup script.
+
+## Recommendations to Resolve the Issue
+
+1. **Shorten Script Runtime**
+   - Edit the backup script to only back up a small test directory or skip large file copies to verify script completion within the 5-minute window.
+
+2. **Add Debug Logging**
+   - Insert `set -x` at the top of your script or add `echo` statements before each command to trace where failure occurs.
+
+3. **Graceful Error Handling**
+   - Add checks to exit gracefully on errors, for example:
+     ```bash
+     set -e
+     if ! mountpoint -q /mnt/efs; then
+       echo "EFS not mounted! Exiting"
+       exit 1
+     fi
+     ```
+   - This helps pinpoint mounting, network, or permission issues early.
+
+4. **Test Script Simplicity**
+   - Reduce the script to just `echo "backup start"` and gradually add sections back in until the error recurs. This identifies the problematic line.
+
+5. **Reference Official Guidance**
+   - AWS documentation stresses that any failure or script overrun (>5min) automatically terminates the notebook/server[1][2][3].
+
+6. **Recovery From Faulty LCC**
+   - If your notebook can’t start after repeated failures, remove or replace the custom LCC using the console or CLI, then re-test[1].
+
+## Examples of Simplified Debug LCC Script
+
+```bash
+#!/bin/bash
+set -eux
+
+# Print start time
+date
+
+# Check EFS mount
+if ! mountpoint -q /mnt/efs; then
+  echo "EFS is not mounted!"
+  exit 1
+fi
+
+echo "Backup script would run here."
+date
+```
+
+Increase the script’s scope step by step to isolate runtime or permission issues.
+
+## References
+
+- Full details on LCC script limitations and debugging: [1][2][3]
+
+**Key Takeaway:** SageMaker terminates the session if LCC scripts run longer than 5 minutes or encounter critical errors. Start from a minimal script, ensure EFS availability, and use debug output to incrementally identify any issue in the AWS-provided backup script.
+
+[1] https://docs.aws.amazon.com/sagemaker/latest/dg/studio-lcc-debug.html
+[2] https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sagemaker/client/create_notebook_instance_lifecycle_config.html
+[3] https://repost.aws/knowledge-center/sagemaker-lifecycle-script-timeout
+[4] https://stackoverflow.com/questions/66560548/sagemaker-fails-when-trying-to-add-lifecycle-configuration-for-keeping-custom-en
+[5] https://docs.aws.amazon.com/sagemaker/latest/dg/notebook-lifecycle-config.html
+[6] https://github.com/aws-samples/amazon-sagemaker-notebook-instance-lifecycle-config-samples
+[7] https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-inference-code.html
+[8] https://aws.amazon.com/blogs/machine-learning/implement-amazon-sagemaker-domain-cross-region-disaster-recovery-using-custom-amazon-efs-instances/
+[9] https://repost.aws/knowledge-center/sagemaker-create-notebook-backup
+[10] https://github.com/aws/sagemaker-training-toolkit/issues/173
+[11] https://repost.aws/questions/QUBwN5GLhySMyuTjuIYwj25A/unexplained-error-setting-up-policy-for-s3-cross-region-replication
+[12] https://repost.aws/questions/QUXmXxfozfR3qfnGxCVrFQRQ/lifecycle-configuration-file-fails-to-auto-terminate-amazon-sagemaker-studio-instance
+[13] https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-training-algo-dockerfile.html
+[14] https://docs.aws.amazon.com/aws-backup/latest/devguide/cross-region-backup.html
+[15] https://github.com/aws-samples/sagemaker-studio-lifecycle-config-examples/issues/17
+[16] https://github.com/aws/sagemaker-training-toolkit/issues/125
+[17] https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html
+[18] https://stackoverflow.com/questions/78319431/lifecycle-configuration-file-fails-to-auto-terminate-amazon-sagemaker-studio-ins
+[19] https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html
+[20] https://docs.aws.amazon.com/aws-backup/latest/devguide/troubleshooting.html
