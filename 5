@@ -1,23 +1,8 @@
-#!/bin/bash
-set -eux
+Here are the prerequisites for the `backup.sh` script to run successfully as a SageMaker Lifecycle Configuration:
 
-# Print environment and working directory for debugging
-echo "PATH=${PATH}"
-echo "pwd=${PWD}"
-
-# Use a default if SAGEMAKER_SPACE_NAME is not set
-SPACE_NAME="${SAGEMAKER_SPACE_NAME:-default}"
-
-# Use /opt/ml/code/backup (always exists and writable in SageMaker)
-BACKUP_ROOT="/opt/ml/code/backup"
-BACKUP_DIR="${BACKUP_ROOT}/space_ebs_backup/${SPACE_NAME}"
-mkdir -p "${BACKUP_DIR}"
-
-# Print timestamp
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-echo "Starting backup at ${TIMESTAMP}"
-
-# Recursively copy /home/sagemaker-user to the backup dir using cp (always available)
-cp -r /home/sagemaker-user/ "${BACKUP_DIR}/"
-
-echo "Backup completed successfully to: ${BACKUP_DIR}"
+* **SageMaker Studio Domain and User Profile:** You must have an active SageMaker Studio domain and a user profile configured within it. The Lifecycle Configuration script will be attached to this user profile.
+* **Amazon EFS File System:** An Amazon Elastic File System (EFS) must be created and configured.
+* **EFS Mounted to SageMaker Studio:** The EFS file system needs to be mounted to your SageMaker Studio domain. This typically involves configuring the SageMaker Studio domain's VPC and security group settings to allow access to the EFS. Once mounted, it will appear within the JupyterLab environment under the path `custom-file-systems/efs/`. The script assumes this mounting structure.
+* **IAM Permissions:** The Amazon SageMaker Execution Role associated with your user profile must have the following permissions:
+    * **EFS Access:** Read and write permissions to the EFS file system (e.g., `elasticfilesystem:ClientMount`, `elasticfilesystem:ClientWrite`, `elasticfilesystem:ClientRootAccess`).
+    * **Sudo Privileges:** The Lifecycle Configuration environment needs to allow `sudo` commands for `apt-get update` and `apt-get install` to install `rsync`. This is generally available by default in SageMaker LCCs, but it's worth noting.
