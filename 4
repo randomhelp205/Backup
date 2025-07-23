@@ -1,84 +1,122 @@
+It looks like you're running into a ConfigurationError: LifecycleConfig execution failed with non zero exit code 127. This error, specifically exit code 127, typically means that a command specified in your script was not found or could not be executed.
+
+In your backup.sh script, you're using the rsync command. The SageMaker Studio Lifecycle Configuration environment might not have rsync pre-installed by default.
+
+To fix this, you need to ensure rsync is installed within your Lifecycle Configuration script before you attempt to use it. You can do this by adding an apt-get update and apt-get install rsync command at the beginning of your script.
+
+Here's the updated backup.sh script and the steps to implement it:
+Updated SageMaker Lifecycle Configuration Backup Script
+24 Jul, 01:46
+
+Open
+
+
+
 #!/bin/bash
+
 set -eux
 
-echo "pwd=${PWD}"
-echo "SpaceName=${SAGEMAKER_SPACE_NAME}"
+# Update package lists and install rsync
+# This is crucial because rsync might not be pre-installed in the LCC environment.
+echo "Updating package lists and installing rsync..."
+sudo apt-get update -y
+sudo apt-get install -y rsync
+
+echo "Current working directory: ${PWD}"
+echo "SageMaker Space Name: ${SAGEMAKER_SPACE_NAME}"
+
+# Find the EFS ID. This assumes the EFS is mounted under custom-file-systems/efs/
+# and its ID is the directory name.
+efs_id=$(ls ./custom-file-systems/efs/ | grep "fs-" | tail -n 1)
+echo "Detected EFS ID: ${efs_id}"
+
+# Get current timestamp for backup directory naming
+time_now=$(date +%s)
+echo "Current timestamp: ${time_now}"
+
+# Print environment variables to a log file for debugging
 printenv > env.log
 
-# Use /opt/ml/code/backup (always exists, writable in SageMaker)
-BACKUP_ROOT="/opt/ml/code/backup"
-echo "Using backup root: ${BACKUP_ROOT}"
+# Create the backup directory structure on EFS
+# The path is custom-file-systems/efs/<EFS_ID>/space_ebs_backup/<SAGEMAKER_SPACE_NAME>/
+backup_dir="custom-file-systems/efs/${efs_id}/space_ebs_backup/${SAGEMAKER_SPACE_NAME}"
+echo "Creating backup directory: ${backup_dir}"
+mkdir -p "${backup_dir}"
 
-# If SAGEMAKER_SPACE_NAME is empty, use 'default' to avoid errors
-TARGET_DIR="${BACKUP_ROOT}/space_ebs_backup/${SAGEMAKER_SPACE_NAME:-default}"
-echo "Target backup dir: ${TARGET_DIR}"
+# Perform the rsync operation
+# -a: archive mode (preserves permissions, ownership, timestamps, etc.)
+# --ignore-existing: skip updating files that already exist on the destination
+# --exclude custom-file-systems: prevent rsyncing the mounted EFS back into itself
+# The source is the current directory (which is the EBS volume content)
+# The destination is the EFS backup directory
+echo "Starting rsync backup..."
+rsync -a --ignore-existing --exclude custom-file-systems/ ./ "${backup_dir}/"
 
-# Make the target directory
-mkdir -p "${TARGET_DIR}"
-
-# Print timestamp
-time_now=$(date +%s)
-echo "Backup timestamp: ${time_now}"
-
-# rsync all files (except env.log and any custom excluded dirs)
-rsync -a --ignore-existing --exclude=env.log --exclude=.ipynb_checkpoints ./ "${TARGET_DIR}/"
-
-echo "Backup completed successfully at: $(date)"
-echo "Backup location: ${TARGET_DIR}"
+echo "Rsync backup completed successfully."
 
 
 
-Certainly! Below is **a revised version of your script** that **removes all EFS and external dependencies**—it will **run reliably on any SageMaker JupyterLab/Notebook/Studio environment** with **no prerequisites** and **no risk of failure** from missing directories or unmounted network filesystems.
 
-This script **logs environment variables, makes a local backup in `/opt/ml/code/backup` (which always exists in SageMaker), and prints where the backup is stored**.  
-It does **not** use or need EFS, custom mounts, or IAM roles.
 
-## **Reliable, No-Prerquisite SageMaker LCC Backup Script**
+Here's how to implement and validate this:
 
-```bash
-#!/bin/bash
-set -eux
+1. Update/Create the SageMaker Lifecycle Configuration
+Go to SageMaker Studio: Open your Amazon SageMaker Studio console.
 
-echo "pwd=${PWD}"
-echo "SpaceName=${SAGEMAKER_SPACE_NAME}"
-printenv > env.log
+Navigate to Lifecycle Configurations: In the left navigation pane, choose Admin configurations, then Lifecycle configurations.
 
-# Use /opt/ml/code/backup (always exists, writable in SageMaker)
-BACKUP_ROOT="/opt/ml/code/backup"
-echo "Using backup root: ${BACKUP_ROOT}"
+Create or Update:
 
-# If SAGEMAKER_SPACE_NAME is empty, use 'default' to avoid errors
-TARGET_DIR="${BACKUP_ROOT}/space_ebs_backup/${SAGEMAKER_SPACE_NAME:-default}"
-echo "Target backup dir: ${TARGET_DIR}"
+If you're creating a new LCC: Click Create configuration.
 
-# Make the target directory
-mkdir -p "${TARGET_DIR}"
+If you're updating an existing LCC: Select your existing LCC (e.g., "7" from your error message), then click Edit.
 
-# Print timestamp
-time_now=$(date +%s)
-echo "Backup timestamp: ${time_now}"
+Configure Script:
 
-# rsync all files (except env.log and any custom excluded dirs)
-rsync -a --ignore-existing --exclude=env.log --exclude=.ipynb_checkpoints ./ "${TARGET_DIR}/"
+Give your LCC a descriptive name (e.g., EBS-EFS-Backup-LCC).
 
-echo "Backup completed successfully at: $(date)"
-echo "Backup location: ${TARGET_DIR}"
-```
+Select JupyterLab for the "Lifecycle config for" option.
 
-## **How This Script Works**
+Copy the entire updated script provided above into the "Script content" area.
 
-- **No EFS**: Backs up to `/opt/ml/code/backup`, a local, writable directory available in all SageMaker environments.
-- **No failures from missing mounts**: If you later set up EFS, you can `rsync` from here to EFS for true DR.
-- **No failure from undefined vars**: If `SAGEMAKER_SPACE_NAME` is not set, uses `default` as a fallback.
-- **Logs environment**: Still writes `env.log` for debugging, but excludes it from the backup.
-- **Reliable**: No external dependencies—just local filesystem operations.
+Create/Save: Click Create configuration or Save changes.
 
-## **How to Use**
+2. Attach the Lifecycle Configuration to your SageMaker User Profile
+Go to User Profiles: In the left navigation pane, choose Admin configurations, then User profiles.
 
-1. **Attach this script to your SageMaker Lifecycle Configuration (LCC).**
-2. **Launch your environment.**  
-   Every time a user starts their session, it will create a timestamped backup in `/opt/ml/code/backup/space_ebs_backup/`.
-3. **Check the backup directory** to confirm files were copied.
-4. **If you later enable EFS**, you can add a second step to rsync these local backups to EFS, but **this script will always work** regardless of EFS availability.
+Select your User Profile: Click on the user profile you want to attach the LCC to.
 
-Let me know if you want to **add more features** (e.g., daily rotation, S3 sync, or EFS sync for true DR) and I’ll show you how!
+Edit User Profile: Click Edit.
+
+Add Lifecycle Configuration:
+
+Scroll down to the "JupyterLab settings" section.
+
+Under "Default lifecycle configuration", select the LCC you just created/updated (e.g., EBS-EFS-Backup-LCC).
+
+You can also add it to "Additional lifecycle configurations" if you want to allow users to choose it when launching JupyterLab.
+
+Submit: Click Submit.
+
+3. Validate the Lifecycle Configuration
+Launch JupyterLab: From your SageMaker Studio console, launch JupyterLab for the user profile where you attached the LCC.
+
+Monitor LCC Execution:
+
+When JupyterLab starts, the LCC script will execute.
+
+You can monitor the execution status and logs by going to Admin configurations > Lifecycle configurations, selecting your LCC, and then viewing the Execution history tab. Look for the recent execution for your user profile.
+
+The logs should show the output of the apt-get commands, rsync output, and any echo statements from your script.
+
+Verify Backup on EFS:
+
+Once JupyterLab has launched, you can open a terminal within JupyterLab.
+
+Navigate to the mounted EFS directory: cd custom-file-systems/efs/<your_efs_id>/space_ebs_backup/<your_sagemaker_space_name>/
+
+List the contents: ls -la
+
+You should see the files and directories from your SageMaker EBS volume (excluding custom-file-systems) replicated here.
+
+By adding sudo apt-get update -y and sudo apt-get install -y rsync, you ensure that the rsync command is available in the environment where your Lifecycle Configuration script runs, which should resolve the "command not found" error (exit code 127).
